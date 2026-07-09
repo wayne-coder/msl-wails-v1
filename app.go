@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
+
+	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type App struct {
@@ -33,6 +36,35 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+
+	// 如果从 U 盘运行，每 3 秒检测一次拔出，拔出后自动关闭程序
+	if isRemovableDrive() {
+		go a.monitorUSBRemoval()
+	}
+}
+
+// monitorUSBRemoval 持续检测 U 盘是否被拔出，拔出后自动退出程序。
+func (a *App) monitorUSBRemoval() {
+	exePath, err := os.Executable()
+	if err != nil {
+		return
+	}
+
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-ticker.C:
+			// GetDriveTypeW 返回 DRIVE_NO_ROOT_DIR (1) 表示盘符已不存在，即 U 盘已拔出
+			if dt := getDriveTypeWindows(exePath); dt == DriveNoRoot || dt == DriveUnknown {
+				wruntime.Quit(a.ctx)
+				return
+			}
+		}
+	}
 }
 
 // GetDriveTypeInfo returns information about the physical drive the application

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, toRef } from 'vue'
+import { ref, computed, watch, toRef, nextTick } from 'vue'
 import { useVirtualScroll } from '../lib/virtualScroll'
 
 interface RecordEntry {
@@ -29,7 +29,11 @@ const selectedSet = ref<Set<number>>(new Set())
 
 // 弹窗打开/records变化时清空选中
 watch(() => props.visible, (v) => {
-  if (v) selectedSet.value = new Set()
+  if (v) {
+    selectedSet.value = new Set()
+    // v-if="visible" 刚创建 DOM，nextTick 后 containerRef 才可用
+    nextTick(() => onRecDialogScroll())
+  }
 })
 watch(() => props.records, () => {
   selectedSet.value = new Set()
