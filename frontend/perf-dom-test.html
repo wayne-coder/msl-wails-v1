@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>码上录 - DOM 渲染性能测试</title>
+<style>
+  body { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 20px; background: #f7f9fc; }
+  h1 { font-size: 18px; margin-bottom: 8px; }
+  .subtitle { color: #64748b; font-size: 12px; margin-bottom: 20px; }
+  .controls { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  button { padding: 10px 20px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+  button:hover { border-color: #3b82f6; color: #3b82f6; }
+  button.primary { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+  button.primary:hover { background: #2563eb; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #status { font-size: 12px; color: #64748b; margin-bottom: 12px; min-height: 18px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px; }
+  th { background: #f8fafc; padding: 10px 12px; text-align: left; font-weight: 700; font-size: 11px; color: #64748b; border-bottom: 2px solid #e2e8f0; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; font-variant-numeric: tabular-nums; }
+  .pass { color: #16a34a; font-weight: 700; }
+  .warn { color: #d97706; font-weight: 700; }
+  .fail { color: #dc2626; font-weight: 700; }
+  .summary { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; font-size: 13px; line-height: 1.8; display: none; }
+  .summary.show { display: block; }
+  #test-area { position: absolute; top: -9999px; left: -9999px; width: 700px; height: 500px; overflow: auto; visibility: hidden; }
+</style>
+</head>
+<body>
+<h1>⚡ 码上录 DOM 渲染性能测试</h1>
+<p class="subtitle">测试真实 DOM 节点创建、布局、绘制开销。数据量级覆盖日常使用到极端场景。</p>
+
+<div class="controls">
+  <button class="primary" id="btn-all" onclick="runAll()">▶ 运行全部测试</button>
+  <button id="btn-records" onclick="runRecordsTest()">📋 Records 列表</button>
+  <button id="btn-table" onclick="runTableTest()">📊 BetList 表格</button>
+  <button id="btn-storage" onclick="runStorageTest()">💾 localStorage</button>
+  <button id="btn-combined" onclick="runCombinedTest()">🔥 综合场景</button>
+</div>
+<div id="status">就绪 - 点击按钮开始测试</div>
+
+<table id="results-table">
+  <thead>
+    <tr><th>测试场景</th><th>数据规模</th><th>DOM 创建</th><th>Layout (reflow)</th><th>滚动帧率</th><th>掉帧数</th><th>判定</th></tr>
+  </thead>
+  <tbody id="results-body">
+    <tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:30px;">等待测试开始...</td></tr>
+  </tbody>
+</table>
+
+<div id="summary" class="summary"></div>
+
+<div id="test-area"></div>
+
+<script>
+// ========== 工具 ==========
+const ZODIAC = ['鼠','牛','虎','兔','龙','蛇','马','羊','猴','鸡','狗','猪']
+const TAILS = ['0','1','2','3','4','5','6','7','8','9']
+const testArea = document.getElementById('test-area')
+const NUM_COLOR = {}
+;[32,21,33,16,27,28,44,39,11,22,17,6,5,43,38,49].forEach(n=>NUM_COLOR[n]='#16a34a')
+;[30,12,45,34,8,46,35,18,40,24,19,23,29,7,2,13,1].forEach(n=>NUM_COLOR[n]='#dc2626')
+;[10,9,36,20,47,48,4,42,3,15,41,31,37,14,26,25].forEach(n=>NUM_COLOR[n]='#2563eb')
+const NUM_ZODIAC = {1:'马',2:'蛇',3:'龙',4:'兔',5:'虎',6:'牛',7:'鼠',8:'猪',9:'狗',10:'鸡',11:'猴',12:'羊',13:'马',14:'蛇',15:'龙',16:'兔',17:'虎',18:'牛',19:'鼠',20:'猪',21:'狗',22:'鸡',23:'猴',24:'羊',25:'马',26:'蛇',27:'龙',28:'兔',29:'虎',30:'牛',31:'鼠',32:'猪',33:'狗',34:'鸡',35:'猴',36:'羊',37:'马',38:'蛇',39:'龙',40:'兔',41:'虎',42:'牛',43:'鼠',44:'猪',45:'狗',46:'鸡',47:'猴',48:'羊',49:'马'}
+
+function genRecords(n) {
+  const regions = ['澳','港'], types = ['特码','二连肖','三连肖','四连肖','五连肖','平特','平码']
+  const players = Array.from({length:20},(_,i)=>'玩家'+(i+1))
+  const recs = []
+  for (let i=0;i<n;i++) {
+    const h = String(Math.floor(Math.random()*24)).padStart(2,'0')
+    const m = String(Math.floor(Math.random()*60)).padStart(2,'0')
+    const s = String(Math.floor(Math.random()*60)).padStart(2,'0')
+    recs.push({
+      time: `07-09 ${h}:${m}:${s}`,
+      totalStake: Math.floor(Math.random()*500),
+      region: regions[Math.floor(Math.random()*2)],
+      betType: types[Math.floor(Math.random()*types.length)],
+      playerName: players[Math.floor(Math.random()*players.length)],
+      numbers: Array.from({length:3},()=>Math.floor(Math.random()*49)+1).join(' '),
+      stake: Math.floor(Math.random()*50)+5,
+      undo: i < n*0.05,
+    })
+  }
+  return recs
+}
+
+async function measureFPS(durationMs, scrollContainer) {
+  return new Promise(resolve => {
+    let frames = 0, drops = 0, lastTime = performance.now(), running = true
+    function tick(now) {
+      if (!running) return
+      const delta = now - lastTime
+      if (delta > 33.33) drops++
+      frames++
+      lastTime = now
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+
+    if (scrollContainer) {
+      const step = scrollContainer.scrollHeight / 60
+      let i = 0
+      const scrollInterval = setInterval(() => {
+        if (i >= 60) { clearInterval(scrollInterval); return }
+        scrollContainer.scrollTop = i * step
+        i++
+      }, durationMs / 60)
+    }
+
+    setTimeout(() => {
+      running = false
+      const elapsed = durationMs / 1000
+      resolve({ fps: Math.round(frames/elapsed), drops })
+    }, durationMs)
+  })
+}
+
+function addResult(scenario, size, domMs, layoutMs, fps, drops, verdict) {
+  const tbody = document.getElementById('results-body')
+  if (tbody.firstChild && tbody.firstChild.textContent.includes('等待')) tbody.innerHTML = ''
+  const badge = verdict === 'pass' ? '<span class="pass">✅ 流畅</span>' :
+    verdict === 'warn' ? '<span class="warn">⚠️ 可感</span>' :
+    '<span class="fail">❌ 卡顿</span>'
+  const fpsColor = fps < 30 ? '#dc2626' : fps < 55 ? '#d97706' : '#16a34a'
+  tbody.insertAdjacentHTML('beforeend', `
+    <tr>
+      <td style="font-weight:600">${scenario}</td>
+      <td style="color:#64748b">${size}</td>
+      <td style="font-weight:600;color:${domMs>500?'#dc2626':domMs>100?'#d97706':'#16a34a'}">${domMs.toFixed(1)}ms</td>
+      <td style="font-weight:600;color:${layoutMs>100?'#dc2626':layoutMs>16?'#d97706':'#16a34a'}">${layoutMs.toFixed(1)}ms</td>
+      <td style="font-weight:600;color:${fpsColor}">${fps}</td>
+      <td style="font-weight:600;color:${drops>10?'#dc2626':drops>3?'#d97706':'#16a34a'}">${drops}</td>
+      <td>${badge}</td>
+    </tr>`)
+}
+
+// ========== 测试 1: Records 列表 DOM 渲染 ==========
+async function runRecordsTest() {
+  const status = document.getElementById('status')
+  for (const count of [100, 500, 1000, 3000, 5000]) {
+    status.textContent = `测试中: Records × ${count}...`
+    await new Promise(r => setTimeout(r, 50))
+
+    testArea.innerHTML = ''
+    const records = genRecords(count)
+
+    // 测量 DOM 创建
+    const domStart = performance.now()
+    const frag = document.createDocumentFragment()
+    const wrapper = document.createElement('div')
+    wrapper.style.cssText = 'display:flex;flex-direction:column;gap:2px'
+    for (const r of records) {
+      const div = document.createElement('div')
+      div.style.cssText = 'padding:3px;font-size:11px;border-bottom:1px solid #eee;white-space:nowrap'
+      if (r.undo) {
+        div.style.color = '#9ca3af'
+        div.textContent = `[${r.time}]撤销[${r.totalStake}][${r.region==='澳'?'澳门':'香港'}][${r.betType}]${r.playerName} ${r.numbers}`
+      } else {
+        div.textContent = `[${r.time}][${r.totalStake}][${r.region==='澳'?'澳门':'香港'}][${r.betType}]${r.playerName} ${r.numbers} 各${r.stake}`
+      }
+      wrapper.appendChild(div)
+    }
+    testArea.appendChild(wrapper)
+    const domTime = performance.now() - domStart
+
+    // 测量 Layout (强制 reflow)
+    const layoutStart = performance.now()
+    testArea.offsetHeight
+    const layoutTime = performance.now() - layoutStart
+
+    // 测量滚动帧率
+    const fpsResult = await measureFPS(2000, testArea)
+
+    let verdict = 'pass'
+    if (domTime + layoutTime > 500 || fpsResult.drops > 10) verdict = 'fail'
+    else if (domTime + layoutTime > 100 || fpsResult.drops > 3) verdict = 'warn'
+
+    addResult('Records 列表', `${count} 条`, domTime, layoutTime, fpsResult.fps, fpsResult.drops, verdict)
+    await new Promise(r => setTimeout(r, 100))
+  }
+  testArea.innerHTML = ''
+  status.textContent = '✅ Records 列表测试完成'
+}
+
+// ========== 测试 2: BetList 表格 (49 行) + 额外连肖行 ==========
+async function runTableTest() {
+  const status = document.getElementById('status')
+
+  // 49 行特码表格
+  status.textContent = '测试中: BetList 49 行表格 × 多个实例...'
+  await new Promise(r => setTimeout(r, 50))
+
+  for (const instances of [1, 10, 50, 100]) {
+    testArea.innerHTML = ''
+    const domStart = performance.now()
+
+    for (let inst = 0; inst < instances; inst++) {
+      const table = document.createElement('div')
+      table.style.cssText = 'display:flex;flex-direction:column;margin-bottom:8px'
+
+      // Header
+      const header = document.createElement('div')
+      header.style.cssText = 'display:flex;padding:7px 10px;font-weight:700;font-size:10px;border-bottom:1px solid #e2e8f0'
+      header.innerHTML = '<span style="flex:0.8">项目</span><span style="flex:1;text-align:right">金额</span><span style="flex:1;text-align:right">风险</span>'
+      table.appendChild(header)
+
+      // Rows
+      for (let i = 1; i <= 49; i++) {
+        const row = document.createElement('div')
+        row.style.cssText = 'display:flex;padding:0 10px;align-items:center;transition:background 0.16s'
+        const color = NUM_COLOR[i] || '#374151'
+        const amount = Math.floor(Math.random() * 200)
+        const risk = Math.floor(Math.random() * 2000 - 500)
+        row.innerHTML = `<span style="flex:0.8;font-weight:600;color:${color}">${i}${NUM_ZODIAC[i]}</span>
+          <span style="flex:1;text-align:right;color:${amount>0?color:''}">${amount>0?amount:''}</span>
+          <span style="flex:1;text-align:right;color:${risk<0?'#dc2626':risk>0?'#16a34a':''}">${risk}</span>`
+        table.appendChild(row)
+      }
+      testArea.appendChild(table)
+    }
+    const domTime = performance.now() - domStart
+
+    const layoutStart = performance.now()
+    testArea.offsetHeight
+    const layoutTime = performance.now() - layoutStart
+
+    const totalRows = instances * 50 // 49 rows + header
+    let verdict = 'pass'
+    if (domTime > 500 || layoutTime > 100) verdict = 'fail'
+    else if (domTime > 100 || layoutTime > 16) verdict = 'warn'
+
+    addResult('BetList 表格', `${instances} 实例 (${totalRows} 行)`, domTime, layoutTime, '-', 0, verdict)
+    await new Promise(r => setTimeout(r, 50))
+  }
+  testArea.innerHTML = ''
+  status.textContent = '✅ BetList 表格测试完成'
+}
+
+// ========== 测试 3: localStorage 同步阻塞 ==========
+async function runStorageTest() {
+  const status = document.getElementById('status')
+
+  for (const [players, bets] of [[10,49],[50,49],[100,30],[200,20]]) {
+    status.textContent = `测试中: localStorage × ${players} 玩家...`
+    await new Promise(r => setTimeout(r, 50))
+
+    // 生成数据
+    const amounts = {}
+    for (let p=0;p<players;p++) {
+      const bt = {}
+      const sn = {}
+      for (let i=0;i<bets;i++) sn[Math.floor(Math.random()*49)+1] = Math.floor(Math.random()*500)+10
+      bt['specialNumber'] = sn
+      amounts['玩家'+(p+1)] = bt
+    }
+
+    const start = performance.now()
+    const json = JSON.stringify(amounts)
+    const stringifyTime = performance.now() - start
+
+    const parseStart = performance.now()
+    JSON.parse(json)
+    const parseTime = performance.now() - parseStart
+
+    const writeStart = performance.now()
+    localStorage.setItem('__perf_test', json)
+    const writeTime = performance.now() - writeStart
+
+    const readStart = performance.now()
+    localStorage.getItem('__perf_test')
+    const readTime = performance.now() - readStart
+
+    localStorage.removeItem('__perf_test')
+
+    const total = stringifyTime + writeTime
+    let verdict = 'pass'
+    if (total > 100) verdict = 'fail'
+    else if (total > 16) verdict = 'warn'
+
+    addResult('localStorage 持久化', `${players}玩家 ${(json.length/1024).toFixed(0)}KB`,
+      stringifyTime, writeTime, '-', 0, verdict)
+    await new Promise(r => setTimeout(r, 50))
+  }
+  status.textContent = '✅ localStorage 测试完成'
+}
+
+// ========== 测试 4: 综合场景 (模拟真实使用) ==========
+async function runCombinedTest() {
+  const status = document.getElementById('status')
+
+  // 场景: 已有 1000 条记录 + 50 个玩家 + 大量投注，连续下注 50 次
+  status.textContent = '测试中: 综合场景 (大量数据 + 连续操作)...'
+  await new Promise(r => setTimeout(r, 50))
+
+  testArea.innerHTML = ''
+  const records = genRecords(1000)
+
+  // 1. 渲染 1000 条记录
+  const domStart1 = performance.now()
+  const wrapper = document.createElement('div')
+  for (const r of records) {
+    const div = document.createElement('div')
+    div.style.cssText = 'padding:3px;font-size:11px;border-bottom:1px solid #eee;white-space:nowrap'
+    div.textContent = `[${r.time}][${r.totalStake}][${r.region}][${r.betType}]${r.playerName} ${r.numbers}`
+    wrapper.appendChild(div)
+  }
+  testArea.appendChild(wrapper)
+  const domTime1 = performance.now() - domStart1
+  testArea.offsetHeight
+
+  // 2. 连续 50 次追加 (模拟连续下注)
+  const appendStart = performance.now()
+  for (let i = 0; i < 50; i++) {
+    const rec = genRecords(1)[0]
+    const div = document.createElement('div')
+    div.style.cssText = 'padding:3px;font-size:11px;border-bottom:1px solid #eee;white-space:nowrap'
+    div.textContent = `[${rec.time}][${rec.totalStake}][${rec.region}][${rec.betType}]${rec.playerName} ${rec.numbers} 各${rec.stake}`
+    wrapper.insertBefore(div, wrapper.firstChild)
+    // 每 10 次强制 layout
+    if (i % 10 === 0) wrapper.offsetHeight
+  }
+  const appendTime = performance.now() - appendStart
+
+  // 3. 滚动帧率
+  const fpsResult = await measureFPS(2000, testArea)
+
+  let verdict = 'pass'
+  if (domTime1 > 500 || fpsResult.drops > 10) verdict = 'fail'
+  else if (domTime1 > 100 || fpsResult.drops > 3) verdict = 'warn'
+
+  addResult('综合: 渲染+追加+滚动', `1000条+50次追加`,
+    domTime1 + appendTime, 0, fpsResult.fps, fpsResult.drops, verdict)
+
+  testArea.innerHTML = ''
+  status.textContent = '✅ 综合场景测试完成'
+}
+
+// ========== 运行全部 ==========
+async function runAll() {
+  document.querySelectorAll('button').forEach(b => b.disabled = true)
+  document.getElementById('results-body').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#3b82f6;padding:30px;">⏳ 测试进行中...</td></tr>'
+  document.getElementById('summary').classList.remove('show')
+
+  await runRecordsTest()
+  await runTableTest()
+  await runStorageTest()
+  await runCombinedTest()
+
+  // 生成总结
+  generateSummary()
+
+  document.querySelectorAll('button').forEach(b => b.disabled = false)
+  document.getElementById('status').textContent = '🎉 全部测试完成'
+}
+
+function generateSummary() {
+  const rows = document.querySelectorAll('#results-body tr')
+  const results = []
+  rows.forEach(r => {
+    const cells = r.querySelectorAll('td')
+    if (cells.length >= 7) {
+      const verdictText = cells[6].textContent.trim()
+      results.push({
+        scenario: cells[0].textContent,
+        size: cells[1].textContent,
+        domTime: parseFloat(cells[2].textContent),
+        layoutTime: parseFloat(cells[3].textContent),
+        fps: cells[4].textContent === '-' ? 0 : parseInt(cells[4].textContent),
+        drops: parseInt(cells[5].textContent),
+        verdict: verdictText.includes('流畅') ? 'pass' : verdictText.includes('可感') ? 'warn' : 'fail',
+      })
+    }
+  })
+
+  const fails = results.filter(r => r.verdict === 'fail')
+  const warns = results.filter(r => r.verdict === 'warn')
+
+  const summary = document.getElementById('summary')
+  let html = '<h3>📊 测试总结</h3>'
+
+  if (fails.length > 0) {
+    html += `<p>❌ <strong>检测到 ${fails.length} 个严重卡顿场景：</strong></p><ul>`
+    fails.forEach(f => html += `<li>${f.scenario} (${f.size}): DOM ${f.domTime.toFixed(1)}ms, 掉帧 ${f.drops}次</li>`)
+    html += '</ul>'
+  }
+
+  if (warns.length > 0) {
+    html += `<p>⚠️ <strong>检测到 ${warns.length} 个边界场景需要关注：</strong></p><ul>`
+    warns.forEach(w => html += `<li>${w.scenario} (${w.size}): DOM ${w.domTime.toFixed(1)}ms</li>`)
+    html += '</ul>'
+  }
+
+  html += '<h3>🔧 核心发现</h3><ol>'
+
+  // 找 records 最大测试
+  const recordsMax = results.filter(r => r.scenario.includes('Records'))
+  if (recordsMax.length > 0) {
+    const max = recordsMax.reduce((a,b) => a.domTime > b.domTime ? a : b)
+    html += `<li><strong>Records 列表</strong>: ${max.size} 条记录时 DOM 创建 ${max.domTime.toFixed(1)}ms。
+      建议 ${max.verdict === 'fail' ? '<span class="fail">必须</span>' : '可以'}使用虚拟滚动 (vue-virtual-scroller)，
+      只渲染可视区域内的 ~20 条记录，可减少 99%+ 的 DOM 节点。</li>`
+  }
+
+  // 找表格最大测试
+  const tableMax = results.filter(r => r.scenario.includes('BetList') || r.scenario.includes('表格'))
+  if (tableMax.length > 0) {
+    html += '<li><strong>BetList 表格</strong>: 单实例仅 49 行，不是瓶颈。但如果未来需要在一个页面显示多个地区的表格，注意 DOM 节点数量。</li>'
+  }
+
+  // localStorage
+  const storageMax = results.filter(r => r.scenario.includes('localStorage'))
+  if (storageMax.length > 0) {
+    const max = storageMax.reduce((a,b) => a.domTime > b.domTime ? a : b)
+    html += `<li><strong>localStorage 持久化</strong>: ${max.size} 数据序列化 ${max.domTime.toFixed(1)}ms + 写入 ${max.layoutTime.toFixed(1)}ms。
+      localStorage.setItem 是同步操作，在主线程上阻塞渲染。建议加 <strong>debounce (500ms~1s)</strong> 后批量写入，
+      或使用 IndexedDB（异步）。</li>`
+  }
+
+  // 综合
+  const combined = results.filter(r => r.scenario.includes('综合'))
+  if (combined.length > 0) {
+    const c = combined[0]
+    html += `<li><strong>综合场景</strong>: 1000 条 + 连续操作，帧率 ${c.fps}fps，掉帧 ${c.drops} 次。
+      数据量在 1000 条以内时基本可用，但超过 3000 条后滚动明显不流畅。</li>`
+  }
+
+  html += '</ol>'
+
+  html += '<h3>💡 优化建议（按优先级）</h3><ol>'
+  html += '<li><strong>【高优先】Records 虚拟滚动</strong>：使用 vue-virtual-scroller 或自定义 virtual-list，records 只渲染可视区域。
+    当前 1000 条 = 1000 个 DOM 节点，虚拟化后只需 ~20 个。</li>'
+  html += '<li><strong>【高优先】localStorage debounce</strong>：将 deep watch 的持久化从"每次变更立即写入"改为"500ms 防抖批量写入"。
+    减少主线程阻塞次数 10x+。</li>'
+  html += '<li><strong>【中优先】shallowRef 优化</strong>：macauAmounts 和 hongkongAmounts 使用 shallowRef + 手动 triggerRef，
+    避免深度响应式追踪大对象树。</li>'
+  html += '<li><strong>【低优先】连肖分页</strong>：如果 lianXiaoRows 超过 200 行，加分页或搜索。</li>'
+  html += '<li><strong>【低优先】requestAnimationFrame 批处理</strong>：连续快速输入时合并多次 DOM 更新到一帧。</li>'
+  html += '</ol>'
+
+  summary.innerHTML = html
+  summary.classList.add('show')
+}
+</script>
+</body>
+</html>

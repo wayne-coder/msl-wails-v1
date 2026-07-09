@@ -1,0 +1,15 @@
+{
+  "name": "msl_wails_v1",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "码上录 - 彩票投注管理工具",
+  "author": "Wayen",
+  "scripts": {
+    "frontend:install": "npm --prefix frontend install",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build",
+    "wails:doctor": "wails doctor",
+    "wails:build": "wails build"
+  }
+}
