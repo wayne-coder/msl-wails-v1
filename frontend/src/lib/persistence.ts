@@ -7,6 +7,7 @@ const KEYS = {
   macauDrawn: `${PREFIX}macauDrawn`,
   hkDrawn: `${PREFIX}hkDrawn`,
   players: `${PREFIX}players`,
+  textReceiveConfig: `${PREFIX}textReceiveConfig`,
 } as const
 
 export function saveState<T>(key: keyof typeof KEYS, data: T): void {

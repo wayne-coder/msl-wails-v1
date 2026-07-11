@@ -16,7 +16,7 @@ import {
   COLOR_SMALL_MAP,
   SIZE_PARITY_MAP,
 } from './zodiacMap'
-import { detectBetType, typeToLabel, getAllTypeKeywords } from './settingsStore'
+import { detectAllBetTypes, typeToLabel, getAllTypeKeywords, settings } from './settingsStore'
 
 export interface ConvertOptions {
   separators: string[]
@@ -70,10 +70,6 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-// 地区关键词
-const HK_KWS = ['香港', '香', '港']
-const MC_KWS = ['澳门', '澳']
-
 export function convertText(input: string, options: ConvertOptions): string {
   const { separators, prefixes, suffixes, betType, region } = options
 
@@ -97,8 +93,8 @@ export function convertText(input: string, options: ConvertOptions): string {
 
   for (const rawLine of rawLines) {
     // 0. 检测此行有哪些地区
-    const hasHK = HK_KWS.some(kw => rawLine.includes(kw))
-    const hasMC = MC_KWS.some(kw => rawLine.includes(kw))
+    const hasHK = settings.regionKeywords.hk.some(kw => rawLine.includes(kw))
+    const hasMC = settings.regionKeywords.mc.some(kw => rawLine.includes(kw))
     const targetRegions: string[] = []
     if (hasHK && hasMC) {
       targetRegions.push('港', '澳')
@@ -110,13 +106,15 @@ export function convertText(input: string, options: ConvertOptions): string {
       targetRegions.push(region)
     }
 
-    // 1. 检测行内类型关键词 → 覆盖下拉框默认值
-    const detectedType = detectBetType(rawLine)
-    const lineBetType = detectedType ? typeToLabel(detectedType) : betType
+    // 1. 检测行内 ALL 类型关键词（支持"复五肖四肖"一行多类型场景）
+    const detectedTypes = detectAllBetTypes(rawLine)
+    const lineBetTypes: string[] = detectedTypes.length > 0
+      ? detectedTypes.map(t => typeToLabel(t))
+      : [betType]
 
     // 2. 移除地区关键词和类型关键词
     let cleanLine = rawLine
-    for (const kw of [...HK_KWS, ...MC_KWS, ...allTypeKeywords]) {
+    for (const kw of [...settings.regionKeywords.hk, ...settings.regionKeywords.mc, ...allTypeKeywords]) {
       cleanLine = cleanLine.replace(kw, ' ')
     }
     cleanLine = cleanLine.replace(/\s+/g, ' ').trim()
@@ -125,11 +123,13 @@ export function convertText(input: string, options: ConvertOptions): string {
     // 3. 按投注额关键词拆分
     const segments = splitByStakeKeyword(cleanLine, prefixes, suffixes)
 
-    // 4. 每个段 × 每个地区 → 输出行
+    // 4. 每个段 × 每个地区 × 每个投注类型 → 输出行
     for (const seg of segments) {
       for (const r of targetRegions) {
-        const result = convertLine(seg, prefixes, suffixes, lineBetType, r)
-        if (result) results.push(result)
+        for (const bt of lineBetTypes) {
+          const result = convertLine(seg, prefixes, suffixes, bt, r)
+          if (result) results.push(result)
+        }
       }
     }
   }
@@ -308,8 +308,12 @@ function convertLine(
   const prefixPattern = prefixes.map(escapeRegex).join('|')
   if (prefixPattern) content = content.replace(new RegExp(prefixPattern, 'g'), ' ')
   if (suffixes.length > 0) {
-    const suffixChars = suffixes.join('')
-    content = content.replace(new RegExp('[' + suffixChars + ']', 'g'), ' ')
+    // 过滤掉同时是内容关键词的后缀字符（如'金'既是金额后缀又是五行关键词）
+    const cleanSuffixes = suffixes.filter(s => !VALID_KEYWORDS.has(s))
+    if (cleanSuffixes.length > 0) {
+      const suffixChars = cleanSuffixes.join('')
+      content = content.replace(new RegExp('[' + suffixChars + ']', 'g'), ' ')
+    }
   }
 
   content = content.replace(/\s+/g, ' ').trim()

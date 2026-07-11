@@ -11,11 +11,12 @@ const emit = defineEmits<{
 }>()
 
 // ========== Tab 状态 ==========
-type TabKey = 'typeKeywords' | 'odds' | 'rebate'
+type TabKey = 'typeKeywords' | 'regionKeywords' | 'odds' | 'rebate'
 const activeTab = ref<TabKey>('typeKeywords')
 
 const tabs: { key: TabKey; label: string }[] = [
   { key: 'typeKeywords', label: '类型关键词' },
+  { key: 'regionKeywords', label: '地区关键词' },
   { key: 'odds', label: '赔率' },
   { key: 'rebate', label: '回水' },
 ]
@@ -37,6 +38,20 @@ const addKeyword = (type: string) => {
 const removeKeyword = (type: string, index: number) => {
   const k = type as BetTypeKey
   settings.typeKeywords[k].splice(index, 1)
+}
+
+// ========== 地区关键词编辑 ==========
+const newRegionKw = ref({ hk: '', mc: '' })
+
+const addRegionKw = (region: 'hk' | 'mc') => {
+  const v = newRegionKw.value[region].trim()
+  if (v && !settings.regionKeywords[region].includes(v)) {
+    settings.regionKeywords[region].push(v)
+    newRegionKw.value[region] = ''
+  }
+}
+const removeRegionKw = (region: 'hk' | 'mc', index: number) => {
+  settings.regionKeywords[region].splice(index, 1)
 }
 
 // ========== 拖动 ==========
@@ -117,6 +132,48 @@ const onDragEnd = () => {
                 </div>
               </div>
             </div>
+            <!-- 地区关键词 -->
+            <div v-if="activeTab === 'regionKeywords'" class="tab-panel">
+              <div class="keyword-group">
+                <div class="keyword-group-title">香港 地区关键词</div>
+                <div class="tag-list">
+                  <span v-for="(kw, i) in settings.regionKeywords.hk" :key="i" class="tag">
+                    {{ kw }}<button class="tag-del" @click="removeRegionKw('hk', i)">&times;</button>
+                  </span>
+                  <span v-if="settings.regionKeywords.hk.length === 0" class="empty-hint">暂无关键词</span>
+                </div>
+                <div class="add-row">
+                  <input
+                    v-model="newRegionKw.hk"
+                    type="text"
+                    class="settings-input"
+                    placeholder="添加香港地区关键词"
+                    @keydown.enter="addRegionKw('hk')"
+                  />
+                  <button class="add-btn-sm" @click="addRegionKw('hk')">+</button>
+                </div>
+              </div>
+              <div class="keyword-group">
+                <div class="keyword-group-title">澳门 地区关键词</div>
+                <div class="tag-list">
+                  <span v-for="(kw, i) in settings.regionKeywords.mc" :key="i" class="tag">
+                    {{ kw }}<button class="tag-del" @click="removeRegionKw('mc', i)">&times;</button>
+                  </span>
+                  <span v-if="settings.regionKeywords.mc.length === 0" class="empty-hint">暂无关键词</span>
+                </div>
+                <div class="add-row">
+                  <input
+                    v-model="newRegionKw.mc"
+                    type="text"
+                    class="settings-input"
+                    placeholder="添加澳门地区关键词"
+                    @keydown.enter="addRegionKw('mc')"
+                  />
+                  <button class="add-btn-sm" @click="addRegionKw('mc')">+</button>
+                </div>
+              </div>
+            </div>
+
             <!-- 赔率 -->
             <div v-if="activeTab === 'odds'" class="tab-panel odds-panel">
               <div class="section-title">特码 / 平码</div>

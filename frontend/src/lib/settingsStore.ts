@@ -1,4 +1,5 @@
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
+import { loadState, saveStateDebounced } from './persistence'
 
 /** 投注类型关键词配置 */
 export interface TypeKeywords {
@@ -38,10 +39,17 @@ export interface RebateSettings {
   lianXiao: number
 }
 
+/** 地区关键词配置 */
+export interface RegionKeywords {
+  hk: string[]
+  mc: string[]
+}
+
 export interface SettingsState {
   typeKeywords: TypeKeywords
   odds: OddsSettings
   rebate: RebateSettings
+  regionKeywords: RegionKeywords
 }
 
 export const settings = reactive<SettingsState>({
@@ -76,6 +84,10 @@ export const settings = reactive<SettingsState>({
     flatSpecial4: 4,
     flatSpecial5: 0,
     lianXiao: 4,
+  },
+  regionKeywords: {
+    hk: ['香港', '香', '港'],
+    mc: ['澳门', '澳', '门', '新'],
   },
 })
 
@@ -131,6 +143,43 @@ export function detectBetType(text: string): BetTypeKey | null {
   return null
 }
 
+/**
+ * 检测文本中 ALL 投注类型关键词，按出现顺序返回。
+ * 用于"复五肖四肖"这类一行包含多个类型的场景，展开为多行输出。
+ * 重叠关键词取最长匹配（如"五连肖"优先于"五肖"）。
+ */
+export function detectAllBetTypes(text: string): BetTypeKey[] {
+  const tk = settings.typeKeywords
+  const matches: { type: BetTypeKey; kw: string; index: number }[] = []
+
+  for (const [type, keywords] of Object.entries(tk)) {
+    for (const kw of keywords) {
+      let startIdx = 0
+      while (true) {
+        const idx = text.indexOf(kw, startIdx)
+        if (idx === -1) break
+        matches.push({ type: type as BetTypeKey, kw, index: idx })
+        startIdx = idx + kw.length
+      }
+    }
+  }
+
+  // 按位置升序，同位置按关键词长度降序（长词优先）
+  matches.sort((a, b) => a.index - b.index || b.kw.length - a.kw.length)
+
+  // 过滤重叠匹配：保留更长（或更先出现）的关键词
+  const result: BetTypeKey[] = []
+  let occupiedEnd = 0
+  for (const m of matches) {
+    if (m.index >= occupiedEnd) {
+      result.push(m.type)
+      occupiedEnd = m.index + m.kw.length
+    }
+  }
+
+  return result
+}
+
 /** 获取所有类型关键词（扁平化） */
 export function getAllTypeKeywords(): string[] {
   const all: string[] = []
@@ -153,11 +202,33 @@ export interface TextReceiveConfig {
   suffixes: string[]
 }
 
-export const textReceiveConfig = reactive<TextReceiveConfig>({
+const DEFAULT_TEXT_RECEIVE_CONFIG: TextReceiveConfig = {
   separators: [' ', ',', '，', '.'],
-  prefixes: ['各', '各组', '一组', '每组', '一注', '每注','买'],
-  suffixes: ['元', '块', '金','米'],
-})
+  prefixes: ['各', '各组', '一组', '每组', '一注', '每注', '买', '='],
+  suffixes: ['元', '块', '米'],
+}
+
+function loadTextReceiveConfig(): TextReceiveConfig {
+  const saved = loadState('textReceiveConfig', null as TextReceiveConfig | null)
+  if (saved && Array.isArray(saved.separators) && Array.isArray(saved.prefixes) && Array.isArray(saved.suffixes)) {
+    return saved
+  }
+  return { ...DEFAULT_TEXT_RECEIVE_CONFIG }
+}
+
+export const textReceiveConfig = reactive<TextReceiveConfig>(loadTextReceiveConfig())
+
+// 自动持久化：配置变更时防抖保存到 localStorage
+watch(
+  [() => [...textReceiveConfig.separators], () => [...textReceiveConfig.prefixes], () => [...textReceiveConfig.suffixes]],
+  () => {
+    saveStateDebounced('textReceiveConfig', {
+      separators: [...textReceiveConfig.separators],
+      prefixes: [...textReceiveConfig.prefixes],
+      suffixes: [...textReceiveConfig.suffixes],
+    })
+  },
+)
 
 export const TYPE_KEYWORD_GROUPS: TypeKeywordGroup[] = [
   { key: 'specialNumber', label: '特码' },
