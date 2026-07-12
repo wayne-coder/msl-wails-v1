@@ -97,6 +97,11 @@ watch(upperText, () => {
   autoTimer = setTimeout(() => onRecognize(), 300)
 })
 
+// 投注类型或地区变化时立即重新识别
+watch([betType, region], () => {
+  if (upperText.value.trim()) onRecognize()
+})
+
 // ========== 拖动 ==========
 const panelStyle = ref<Record<string, string>>({})
 let dragging = false
