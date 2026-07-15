@@ -70,6 +70,64 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/**
+ * 按空白行分块，为每行分配地区。
+ * 规则：
+ * - 块内只有一种地区关键词 → 整块所有行统一用该地区
+ * - 块内两种地区关键词都有 → 流式：每个关键词影响其后行，直到遇到另一个关键词
+ * - 块内无关键词 → 用下拉框默认值
+ * - 空白行是块边界
+ */
+function getLineRegionMap(
+  allLines: string[],
+  dropdownRegion: string,
+): (string | null)[] {
+  const n = allLines.length
+  const map: (string | null)[] = new Array(n).fill(null)
+
+  // 按空白行分块
+  const blocks: number[][] = []
+  let cur: number[] = []
+  for (let i = 0; i < n; i++) {
+    if (allLines[i] === '') {
+      if (cur.length > 0) { blocks.push(cur); cur = [] }
+    } else {
+      cur.push(i)
+    }
+  }
+  if (cur.length > 0) blocks.push(cur)
+
+  for (const block of blocks) {
+    let hasHK = false, hasMC = false
+    for (const idx of block) {
+      if (settings.regionKeywords.hk.some(kw => allLines[idx].includes(kw))) hasHK = true
+      if (settings.regionKeywords.mc.some(kw => allLines[idx].includes(kw))) hasMC = true
+    }
+
+    if (!hasHK && !hasMC) {
+      // 块内无关键词 → 用下拉框
+      for (const idx of block) map[idx] = dropdownRegion
+    } else if (hasHK && !hasMC) {
+      // 只有港 → 整块用港
+      for (const idx of block) map[idx] = '港'
+    } else if (!hasHK && hasMC) {
+      // 只有澳 → 整块用澳
+      for (const idx of block) map[idx] = '澳'
+    } else {
+      // 两种都有 → 流式：关键词只影响其后行
+      let curReg = dropdownRegion
+      for (const idx of block) {
+        const line = allLines[idx]
+        if (settings.regionKeywords.hk.some(kw => line.includes(kw))) curReg = '港'
+        if (settings.regionKeywords.mc.some(kw => line.includes(kw))) curReg = '澳'
+        map[idx] = curReg
+      }
+    }
+  }
+
+  return map
+}
+
 export function convertText(input: string, options: ConvertOptions): string {
   const { separators, prefixes, suffixes, betType, region } = options
 
@@ -82,26 +140,32 @@ export function convertText(input: string, options: ConvertOptions): string {
   }
   processed = processed.replace(/[，。；、·:;]/g, ' ').replace(/[^\S\n]+/g, ' ')
 
-  // 先按显式换行拆分
-  const rawLines = processed.split('\n').map(s => s.trim()).filter(s => s.length > 0)
-  if (rawLines.length === 0) return ''
+  // 先按显式换行拆分（保留空白行用于分块）
+  const allLines = processed.split('\n').map(s => s.trim())
+  if (allLines.every(s => s === '')) return ''
 
   const results: string[] = []
 
   // 收集所有类型关键词（用于从内容中移除）
   const allTypeKeywords = getAllTypeKeywords()
 
-  for (const rawLine of rawLines) {
+  // 按空白行分块，为每行分配地区
+  const lineRegionMap = getLineRegionMap(allLines, region)
+
+  for (let li = 0; li < allLines.length; li++) {
+    const rawLine = allLines[li]
+    if (!rawLine) continue  // 跳过空白行
+
     // 0. 检测此行有哪些地区
     const hasHK = settings.regionKeywords.hk.some(kw => rawLine.includes(kw))
     const hasMC = settings.regionKeywords.mc.some(kw => rawLine.includes(kw))
+    const lineRegion = lineRegionMap[li]
     const targetRegions: string[] = []
     if (hasHK && hasMC) {
+      // 单行同时有港澳 → 两个地区都输出
       targetRegions.push('港', '澳')
-    } else if (hasHK) {
-      targetRegions.push('港')
-    } else if (hasMC) {
-      targetRegions.push('澳')
+    } else if (lineRegion !== null) {
+      targetRegions.push(lineRegion)
     } else {
       targetRegions.push(region)
     }

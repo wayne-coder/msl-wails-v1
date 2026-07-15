@@ -48,9 +48,9 @@ function handleInput(
 
   // 拒绝 0 和超出范围的值
   if (num < 1 || num > 49) {
-    // 如果首数字是 0，清空
+    // 如果首数字是 0，保留以便用户继续输入第二个数字（如 05→5）
     if (cleaned === '0') {
-      nums[index] = ''
+      nums[index] = '0'
       return
     }
     // 多位数超出范围（如 50+），保留首数字
@@ -64,8 +64,8 @@ function handleInput(
   // 合法值 1-49
   nums[index] = String(num)
 
-  // 两位数输入完成（≥10）时自动跳到下一个
-  if (num >= 10 && index < 6) {
+  // 输入完成（两位数 或 0X 格式的个位数）时自动跳到下一个
+  if ((num >= 10 || cleaned.length === 2) && index < 6) {
     nextTick(() => {
       const refs = region === 'macau' ? macauInputRefs : hkInputRefs
       const next = refs.value[index + 1]
@@ -93,7 +93,7 @@ function handlePaste(
 
   if (num >= 1 && num <= 49) {
     nums[index] = String(num)
-    if (num >= 10 && index < 6) {
+    if ((num >= 10 || cleaned.length === 2) && index < 6) {
       nextTick(() => {
         const refs = region === 'macau' ? macauInputRefs : hkInputRefs
         const next = refs.value[index + 1]
@@ -141,6 +141,18 @@ function handleKeydown(
     e.preventDefault()
     refs.value[index + 1]?.focus()
     refs.value[index + 1]?.select()
+  }
+}
+
+
+/** 失焦时清空无效值（如残留的 "0"） */
+function handleBlur(region: 'macau' | 'hk', index: number) {
+  const nums = region === 'macau' ? macauNums : hkNums
+  const val = nums[index]
+  if (!val) return
+  const num = Number(val)
+  if (num < 1 || num > 49) {
+    nums[index] = ''
   }
 }
 
@@ -242,6 +254,7 @@ const onDragEnd = () => {
                   @keydown="handleKeydown($event, 'macau', i - 1)"
                   @paste="handlePaste($event, 'macau', i - 1)"
                   @contextmenu="ctxMenu.show"
+                  @blur="handleBlur('macau', i - 1)"
                 />
               </div>
             </div>
@@ -275,6 +288,7 @@ const onDragEnd = () => {
                   @keydown="handleKeydown($event, 'hk', i - 1)"
                   @paste="handlePaste($event, 'hk', i - 1)"
                   @contextmenu="ctxMenu.show"
+                  @blur="handleBlur('hk', i - 1)"
                 />
               </div>
             </div>
