@@ -1,3 +1,5 @@
+import { writeFile } from '@/services/fileStorage'
+
 const PREFIX = 'msl_'
 
 const KEYS = {
@@ -10,14 +12,39 @@ const KEYS = {
   textReceiveConfig: `${PREFIX}textReceiveConfig`,
 } as const
 
+/** Maps each localStorage key to its file name in MSL_Data/. */
+const FILE_NAMES: Record<keyof typeof KEYS, string> = {
+  macauAmounts: 'macau-amounts.json',
+  hongkongAmounts: 'hongkong-amounts.json',
+  records: 'records.json',
+  macauDrawn: 'macau-drawn.json',
+  hkDrawn: 'hk-drawn.json',
+  players: 'players.json',
+  textReceiveConfig: 'text-receive-config.json',
+}
+
+/**
+ * Save data to localStorage (sync) and file storage (fire-and-forget).
+ * localStorage is the fast sync source; file storage is the durable primary.
+ */
 export function saveState<T>(key: keyof typeof KEYS, data: T): void {
+  // 1. Write to localStorage (sync — serves as fast init cache).
   try {
     localStorage.setItem(KEYS[key], JSON.stringify(data))
   } catch {
     // localStorage 不可用时静默失败（如隐私模式）
   }
+
+  // 2. Write to file storage (fire-and-forget — durable persistence).
+  const fileName = FILE_NAMES[key]
+  writeFile(fileName, JSON.stringify(data)).catch(() => {})
 }
 
+/**
+ * Load data from localStorage (sync, fast).
+ * File storage is the durable source but requires async Go calls;
+ * localStorage serves as the sync-read cache initialized at startup.
+ */
 export function loadState<T>(key: keyof typeof KEYS, fallback: T): T {
   try {
     const raw = localStorage.getItem(KEYS[key])

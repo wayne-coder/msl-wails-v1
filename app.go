@@ -115,14 +115,21 @@ func localizeArch(value string) string {
 	}
 }
 
-func resolveDataDir() string {
-	base, err := os.UserConfigDir()
+// resolveMSLDataDir returns <exe_dir>/MSL_Data/ regardless of drive type.
+// This ensures all data travels with the application (portable deployment).
+// Falls back to <cwd>/MSL_Data/ if os.Executable fails.
+func resolveMSLDataDir() string {
+	exePath, err := os.Executable()
 	if err != nil {
 		cwd, cwdErr := os.Getwd()
 		if cwdErr != nil {
-			return "msl_wails_v1_data"
+			return "MSL_Data"
 		}
-		return filepath.Join(cwd, "msl_wails_v1_data")
+		return filepath.Join(cwd, "MSL_Data")
 	}
-	return filepath.Join(base, "msl_wails_v1")
+	return filepath.Join(filepath.Dir(exePath), "MSL_Data")
+}
+
+func resolveDataDir() string {
+	return resolveMSLDataDir()
 }

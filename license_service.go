@@ -203,23 +203,9 @@ func getDeviceInfo() (string, string, error) {
 const deviceIDFileName = ".device-id"
 
 // getDeviceIDDir returns the directory where the persistent device-id file is stored.
-// Same directory as the license file.
+// Same directory as the license file: MSL_Data/.
 func getDeviceIDDir() (string, error) {
-	dt := getExeDriveType()
-
-	if dt == DriveRemovable {
-		exePath, err := os.Executable()
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(filepath.Dir(exePath), "MSL_Data"), nil
-	}
-
-	base, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, "msl_wails_v1"), nil
+	return resolveMSLDataDir(), nil
 }
 
 func loadPersistedDeviceID() string {
@@ -492,23 +478,7 @@ func writeLicenseFile(license storedLicense) error {
 }
 
 func getLicensePath() (string, error) {
-	dt := getExeDriveType()
-
-	// USB / removable media: store license alongside the executable so it travels with the drive.
-	if dt == DriveRemovable {
-		exePath, err := os.Executable()
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(filepath.Dir(exePath), "MSL_Data", licenseFileName), nil
-	}
-
-	// Local fixed disk: store in the user's config directory.
-	base, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, "msl_wails_v1", licenseFileName), nil
+	return filepath.Join(resolveMSLDataDir(), licenseFileName), nil
 }
 
 // formatRemaining formats a duration into a precise human-readable Chinese string.

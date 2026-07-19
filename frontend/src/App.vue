@@ -1,6 +1,55 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import LayoutView from './components/LayoutView.vue'
 import ContextMenu from './components/ContextMenu.vue'
+import { migrateIfNeeded } from './services/migration'
+import { loadSettingsAsync } from './lib/settingsStore'
+import { readFile } from './services/fileStorage'
+
+// localStorage keys and their corresponding file names for seeding cache.
+const CACHE_SEED_MAP: Record<string, string> = {
+  'msl_macauAmounts': 'macau-amounts.json',
+  'msl_hongkongAmounts': 'hongkong-amounts.json',
+  'msl_records': 'records.json',
+  'msl_macauDrawn': 'macau-drawn.json',
+  'msl_hkDrawn': 'hk-drawn.json',
+  'msl_players': 'players.json',
+  'msl_textReceiveConfig': 'text-receive-config.json',
+}
+
+/** Seed localStorage from file storage, but only for keys that are empty locally. */
+async function seedLocalStorageFromFiles() {
+  for (const [localKey, fileName] of Object.entries(CACHE_SEED_MAP)) {
+    // Only seed if localStorage doesn't already have data for this key.
+    if (localStorage.getItem(localKey) !== null) continue
+
+    const content = await readFile(fileName)
+    if (content) {
+      try {
+        localStorage.setItem(localKey, content)
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+onMounted(async () => {
+  // Slight delay so the Go runtime is fully initialized, then:
+  // 1. Run one-time localStorage → file migration.
+  // 2. Pre-warm localStorage cache from files (for fresh installs or data copied from another machine).
+  // 3. Load settings from file storage.
+  setTimeout(async () => {
+    // One-time migration from legacy localStorage to file storage.
+    await migrateIfNeeded()
+
+    // Seed localStorage from files so sync loadState() calls work on fresh starts.
+    await seedLocalStorageFromFiles()
+
+    // Load settings from file (falls back to localStorage, then defaults).
+    await loadSettingsAsync()
+  }, 500)
+})
 </script>
 
 <template>

@@ -1,5 +1,11 @@
 import type { ActivationResult, AppRuntimeInfo, DriveTypeInfo, LicenseStatus } from '@/types/desktop'
 
+export interface FileStorageResult {
+  success: boolean
+  data: string
+  error: string
+}
+
 declare global {
   interface Window {
     go?: {
@@ -10,6 +16,9 @@ declare global {
           GetMachineCode?: () => Promise<string>
           GetLicenseStatus?: () => Promise<LicenseStatus>
           ActivateLicense?: (code: string) => Promise<ActivationResult>
+          ReadDataFile?: (filename: string) => Promise<FileStorageResult>
+          WriteDataFile?: (filename: string, data: string) => Promise<FileStorageResult>
+          DeleteDataFile?: (filename: string) => Promise<FileStorageResult>
         }
       }
     }

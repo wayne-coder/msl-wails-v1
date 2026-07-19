@@ -1,5 +1,6 @@
 import { reactive, watch } from 'vue'
-import { loadState, saveStateDebounced } from './persistence'
+import { saveStateDebounced } from './persistence'
+import { readFile, writeFile } from '@/services/fileStorage'
 
 /** 投注类型关键词配置 */
 export interface TypeKeywords {
@@ -52,44 +53,230 @@ export interface SettingsState {
   regionKeywords: RegionKeywords
 }
 
+/** 持久化到 settings.json 的完整设置结构 */
+interface PersistedSettings {
+  typeKeywords: TypeKeywords
+  odds: OddsSettings
+  rebate: RebateSettings
+  regionKeywords: RegionKeywords
+  textReceiveConfig: TextReceiveConfig
+}
+
+// ========== 默认值 ==========
+
+const DEFAULT_TYPE_KEYWORDS: TypeKeywords = {
+  specialNumber: ['特码', '特'],
+  lianXiao2: ['二连肖', '2连肖', '二冲', '2冲', '二冲关', '2冲关', '二肖', '2肖'],
+  lianXiao3: ['三连肖', '3连肖', '三冲', '3冲', '三冲关', '3冲关', '三肖', '3肖'],
+  lianXiao4: ['四连肖', '4连肖', '四冲', '4冲', '四冲关', '4冲关', '四肖', '4肖'],
+  lianXiao5: ['五连肖', '5连肖', '五冲', '5冲', '五冲关', '5冲关', '五肖', '5肖'],
+  flatSpecial: ['平特'],
+  flatNumber: ['平码'],
+}
+
+const DEFAULT_ODDS: OddsSettings = {
+  specialNumber: 47,
+  flatNumber: 8,
+  flatSpecial: 2,
+  flatSpecial4: 2,
+  flatSpecial5: 1.8,
+  lianXiao2: 4.5,
+  lianXiao3: 11,
+  lianXiao4: 33,
+  lianXiao5: 110,
+  lianXiaoMa2: 4,
+  lianXiaoMa3: 10,
+  lianXiaoMa4: 30,
+  lianXiaoMa5: 90,
+}
+
+const DEFAULT_REBATE: RebateSettings = {
+  general: 15,
+  specialNumber: 4,
+  flatNumber: 0,
+  flatSpecial4: 4,
+  flatSpecial5: 0,
+  lianXiao: 4,
+}
+
+const DEFAULT_REGION_KEYWORDS: RegionKeywords = {
+  hk: ['香港', '香', '港'],
+  mc: ['澳门', '澳', '门', '新'],
+}
+
+const DEFAULT_TEXT_RECEIVE_CONFIG: TextReceiveConfig = {
+  separators: [' ', ',', '，', '.'],
+  prefixes: ['各', '各组', '一组', '每组', '一注', '每注', '买', '='],
+  suffixes: ['元', '块', '米'],
+}
+
+// ========== 响应式状态 ==========
+
 export const settings = reactive<SettingsState>({
-  typeKeywords: {
-    specialNumber: ['特码', '特'],
-    lianXiao2: ['二连肖', '2连肖', '二冲', '2冲', '二冲关', '2冲关', '二肖', '2肖'],
-    lianXiao3: ['三连肖', '3连肖', '三冲', '3冲', '三冲关', '3冲关', '三肖', '3肖'],
-    lianXiao4: ['四连肖', '4连肖', '四冲', '4冲', '四冲关', '4冲关', '四肖', '4肖'],
-    lianXiao5: ['五连肖', '5连肖', '五冲', '5冲', '五冲关', '5冲关', '五肖', '5肖'],
-    flatSpecial: ['平特'],
-    flatNumber: ['平码'],
-  },
-  odds: {
-    specialNumber: 47,
-    flatNumber: 8,
-    flatSpecial: 2,
-    flatSpecial4: 2,
-    flatSpecial5: 1.8,
-    lianXiao2: 4.5,
-    lianXiao3: 11,
-    lianXiao4: 33,
-    lianXiao5: 110,
-    lianXiaoMa2: 4,
-    lianXiaoMa3: 10,
-    lianXiaoMa4: 30,
-    lianXiaoMa5: 90,
-  },
-  rebate: {
-    general: 15,
-    specialNumber: 4,
-    flatNumber: 0,
-    flatSpecial4: 4,
-    flatSpecial5: 0,
-    lianXiao: 4,
-  },
-  regionKeywords: {
-    hk: ['香港', '香', '港'],
-    mc: ['澳门', '澳', '门', '新'],
-  },
+  typeKeywords: { ...DEFAULT_TYPE_KEYWORDS },
+  odds: { ...DEFAULT_ODDS },
+  rebate: { ...DEFAULT_REBATE },
+  regionKeywords: { ...DEFAULT_REGION_KEYWORDS },
 })
+
+export const textReceiveConfig = reactive<TextReceiveConfig>({ ...DEFAULT_TEXT_RECEIVE_CONFIG })
+
+// ========== 持久化 ==========
+
+const SETTINGS_FILE = 'settings.json'
+const SETTINGS_STORAGE_KEY = 'msl_settings'
+
+function parseSettings(raw: string): PersistedSettings | null {
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return null
+    const obj = parsed as Record<string, unknown>
+
+    const result: PersistedSettings = {
+      typeKeywords: {
+        specialNumber: Array.isArray(obj.typeKeywords) ? [] : Array.isArray((obj.typeKeywords as any)?.specialNumber) ? (obj.typeKeywords as any).specialNumber.map(String) : [...DEFAULT_TYPE_KEYWORDS.specialNumber],
+        lianXiao2: Array.isArray(obj.typeKeywords) ? [] : Array.isArray((obj.typeKeywords as any)?.lianXiao2) ? (obj.typeKeywords as any).lianXiao2.map(String) : [...DEFAULT_TYPE_KEYWORDS.lianXiao2],
+        lianXiao3: Array.isArray(obj.typeKeywords) ? [] : Array.isArray((obj.typeKeywords as any)?.lianXiao3) ? (obj.typeKeywords as any).lianXiao3.map(String) : [...DEFAULT_TYPE_KEYWORDS.lianXiao3],
+        lianXiao4: Array.isArray(obj.typeKeywords) ? [] : Array.isArray((obj.typeKeywords as any)?.lianXiao4) ? (obj.typeKeywords as any).lianXiao4.map(String) : [...DEFAULT_TYPE_KEYWORDS.lianXiao4],
+        lianXiao5: Array.isArray(obj.typeKeywords) ? [] : Array.isArray((obj.typeKeywords as any)?.lianXiao5) ? (obj.typeKeywords as any).lianXiao5.map(String) : [...DEFAULT_TYPE_KEYWORDS.lianXiao5],
+        flatSpecial: Array.isArray(obj.typeKeywords) ? [] : Array.isArray((obj.typeKeywords as any)?.flatSpecial) ? (obj.typeKeywords as any).flatSpecial.map(String) : [...DEFAULT_TYPE_KEYWORDS.flatSpecial],
+        flatNumber: Array.isArray(obj.typeKeywords) ? [] : Array.isArray((obj.typeKeywords as any)?.flatNumber) ? (obj.typeKeywords as any).flatNumber.map(String) : [...DEFAULT_TYPE_KEYWORDS.flatNumber],
+      },
+      odds: { ...DEFAULT_ODDS },
+      rebate: { ...DEFAULT_REBATE },
+      regionKeywords: { ...DEFAULT_REGION_KEYWORDS },
+      textReceiveConfig: { ...DEFAULT_TEXT_RECEIVE_CONFIG },
+    }
+
+    if (obj.odds && typeof obj.odds === 'object') {
+      const o = obj.odds as Record<string, unknown>
+      for (const k of Object.keys(result.odds)) {
+        if (typeof o[k] === 'number') (result.odds as any)[k] = o[k]
+      }
+    }
+
+    if (obj.rebate && typeof obj.rebate === 'object') {
+      const r = obj.rebate as Record<string, unknown>
+      for (const k of Object.keys(result.rebate)) {
+        if (typeof r[k] === 'number') (result.rebate as any)[k] = r[k]
+      }
+    }
+
+    if (obj.regionKeywords && typeof obj.regionKeywords === 'object') {
+      const rk = obj.regionKeywords as Record<string, unknown>
+      if (Array.isArray(rk.hk)) result.regionKeywords.hk = rk.hk.map(String)
+      if (Array.isArray(rk.mc)) result.regionKeywords.mc = rk.mc.map(String)
+    }
+
+    if (obj.textReceiveConfig && typeof obj.textReceiveConfig === 'object') {
+      const tc = obj.textReceiveConfig as Record<string, unknown>
+      if (Array.isArray(tc.separators)) result.textReceiveConfig.separators = tc.separators.map(String)
+      if (Array.isArray(tc.prefixes)) result.textReceiveConfig.prefixes = tc.prefixes.map(String)
+      if (Array.isArray(tc.suffixes)) result.textReceiveConfig.suffixes = tc.suffixes.map(String)
+    }
+
+    return result
+  } catch {
+    return null
+  }
+}
+
+function applyLoadedSettings(loaded: PersistedSettings) {
+  // Merge into reactive objects (preserve reactivity).
+  Object.assign(settings.typeKeywords, loaded.typeKeywords)
+  Object.assign(settings.odds, loaded.odds)
+  Object.assign(settings.rebate, loaded.rebate)
+  Object.assign(settings.regionKeywords, loaded.regionKeywords)
+  Object.assign(textReceiveConfig, loaded.textReceiveConfig)
+}
+
+/**
+ * Async loader — call at startup to load settings from MSL_Data/settings.json.
+ * Falls back to localStorage if file doesn't exist yet (pre-migration or browser dev mode).
+ */
+export async function loadSettingsAsync(): Promise<void> {
+  // 1. Try file-based storage (MSL_Data/settings.json).
+  const raw = await readFile(SETTINGS_FILE)
+  if (raw) {
+    const parsed = parseSettings(raw)
+    if (parsed) {
+      applyLoadedSettings(parsed)
+      return
+    }
+  }
+
+  // 2. Fallback: localStorage (pre-migration data or browser dev mode).
+  const localRaw = localStorage.getItem(SETTINGS_STORAGE_KEY)
+  if (localRaw) {
+    const parsed = parseSettings(localRaw)
+    if (parsed) {
+      applyLoadedSettings(parsed)
+      return
+    }
+  }
+
+  // 3. Nothing found — use defaults (already set on the reactive objects).
+}
+
+function persistAllSettings() {
+  if (typeof window === 'undefined') return
+
+  const data: PersistedSettings = {
+    typeKeywords: JSON.parse(JSON.stringify(settings.typeKeywords)),
+    odds: { ...settings.odds },
+    rebate: { ...settings.rebate },
+    regionKeywords: JSON.parse(JSON.stringify(settings.regionKeywords)),
+    textReceiveConfig: JSON.parse(JSON.stringify(textReceiveConfig)),
+  }
+
+  const json = JSON.stringify(data)
+
+  // Primary: file storage (fire-and-forget).
+  writeFile(SETTINGS_FILE, json).catch(() => {})
+
+  // Fallback: localStorage.
+  localStorage.setItem(SETTINGS_STORAGE_KEY, json)
+}
+
+// Auto-persist ALL settings on change (debounced).
+// We watch each major section individually to batch related changes.
+watch(
+  () => JSON.parse(JSON.stringify(settings.typeKeywords)),
+  () => persistAllSettings(),
+  { deep: true },
+)
+watch(
+  () => ({ ...settings.odds }),
+  () => persistAllSettings(),
+)
+watch(
+  () => ({ ...settings.rebate }),
+  () => persistAllSettings(),
+)
+watch(
+  () => JSON.parse(JSON.stringify(settings.regionKeywords)),
+  () => persistAllSettings(),
+)
+
+// Note: textReceiveConfig auto-persists via persistence.ts watcher too.
+// The persistence.ts watcher still runs for backward compatibility; the
+// persistAllSettings here additionally writes the combined settings file.
+// We add a short debounce by wrapping in a flag:
+let _persistTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  [() => [...textReceiveConfig.separators], () => [...textReceiveConfig.prefixes], () => [...textReceiveConfig.suffixes]],
+  () => {
+    // Also persist via persistence.ts for backward compat.
+    saveStateDebounced('textReceiveConfig', {
+      separators: [...textReceiveConfig.separators],
+      prefixes: [...textReceiveConfig.prefixes],
+      suffixes: [...textReceiveConfig.suffixes],
+    })
+    // Debounce the combined settings write.
+    if (_persistTimer) clearTimeout(_persistTimer)
+    _persistTimer = setTimeout(persistAllSettings, 300)
+  },
+)
 
 export type BetTypeKey = keyof TypeKeywords
 
@@ -201,34 +388,6 @@ export interface TextReceiveConfig {
   prefixes: string[]
   suffixes: string[]
 }
-
-const DEFAULT_TEXT_RECEIVE_CONFIG: TextReceiveConfig = {
-  separators: [' ', ',', '，', '.'],
-  prefixes: ['各', '各组', '一组', '每组', '一注', '每注', '买', '='],
-  suffixes: ['元', '块', '米'],
-}
-
-function loadTextReceiveConfig(): TextReceiveConfig {
-  const saved = loadState('textReceiveConfig', null as TextReceiveConfig | null)
-  if (saved && Array.isArray(saved.separators) && Array.isArray(saved.prefixes) && Array.isArray(saved.suffixes)) {
-    return saved
-  }
-  return { ...DEFAULT_TEXT_RECEIVE_CONFIG }
-}
-
-export const textReceiveConfig = reactive<TextReceiveConfig>(loadTextReceiveConfig())
-
-// 自动持久化：配置变更时防抖保存到 localStorage
-watch(
-  [() => [...textReceiveConfig.separators], () => [...textReceiveConfig.prefixes], () => [...textReceiveConfig.suffixes]],
-  () => {
-    saveStateDebounced('textReceiveConfig', {
-      separators: [...textReceiveConfig.separators],
-      prefixes: [...textReceiveConfig.prefixes],
-      suffixes: [...textReceiveConfig.suffixes],
-    })
-  },
-)
 
 export const TYPE_KEYWORD_GROUPS: TypeKeywordGroup[] = [
   { key: 'specialNumber', label: '特码' },
