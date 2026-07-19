@@ -4,6 +4,8 @@ import {main} from '../models';
 
 export function ActivateLicense(arg1:string):Promise<main.ActivationResult>;
 
+export function DeleteDataFile(arg1:string):Promise<main.FileStorageResult>;
+
 export function GetDriveTypeInfo():Promise<main.DriveTypeInfo>;
 
 export function GetLicenseStatus():Promise<main.LicenseStatus>;
@@ -11,3 +13,7 @@ export function GetLicenseStatus():Promise<main.LicenseStatus>;
 export function GetMachineCode():Promise<string>;
 
 export function GetRuntimeInfo():Promise<main.RuntimeInfo>;
+
+export function ReadDataFile(arg1:string):Promise<main.FileStorageResult>;
+
+export function WriteDataFile(arg1:string,arg2:string):Promise<main.FileStorageResult>;

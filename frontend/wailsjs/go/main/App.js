@@ -6,6 +6,10 @@ export function ActivateLicense(arg1) {
   return window['go']['main']['App']['ActivateLicense'](arg1);
 }
 
+export function DeleteDataFile(arg1) {
+  return window['go']['main']['App']['DeleteDataFile'](arg1);
+}
+
 export function GetDriveTypeInfo() {
   return window['go']['main']['App']['GetDriveTypeInfo']();
 }
@@ -20,4 +24,12 @@ export function GetMachineCode() {
 
 export function GetRuntimeInfo() {
   return window['go']['main']['App']['GetRuntimeInfo']();
+}
+
+export function ReadDataFile(arg1) {
+  return window['go']['main']['App']['ReadDataFile'](arg1);
+}
+
+export function WriteDataFile(arg1, arg2) {
+  return window['go']['main']['App']['WriteDataFile'](arg1, arg2);
 }
